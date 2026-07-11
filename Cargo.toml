@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["common", "wrapper", "overlay"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/anthonybarros/ccnotify"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

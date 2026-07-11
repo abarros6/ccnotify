@@ -1,0 +1,27 @@
+# Rust build artifacts (Cargo.lock IS committed — pinned builds)
+/target/
+
+# Tauri build-time codegen (regenerated on every build)
+/overlay/gen/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Claude Code local (machine-specific permission grants)
+.claude/settings.local.json
+
+# ccnotify per-project config (each user sets their own alias)
+.ccnotify.json
+
+# Logs and scratch
+*.log
+/tmp/
