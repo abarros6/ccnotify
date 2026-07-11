@@ -370,10 +370,38 @@ fn strip_escapes(bytes: &[u8]) -> String {
             match chars.next() {
                 // CSI: parameters, then one final byte in @..~
                 Some('[') => {
+                    let mut params = String::new();
+                    let mut fin = '\0';
                     for n in chars.by_ref() {
                         if ('\u{40}'..='\u{7e}').contains(&n) {
+                            fin = n;
                             break;
                         }
+                        params.push(n);
+                    }
+                    // TUIs position text with cursor moves instead of
+                    // spaces/newlines; approximate those so words don't
+                    // get glued together.
+                    let last = out.chars().last();
+                    match fin {
+                        // cursor forward n columns -> n spaces
+                        'C' => {
+                            let n: usize = params.parse().unwrap_or(1);
+                            out.extend(std::iter::repeat(' ').take(n.clamp(1, 200)));
+                        }
+                        // column-absolute jump -> word gap
+                        'G' | '`' => {
+                            if !matches!(last, None | Some(' ') | Some('\n')) {
+                                out.push(' ');
+                            }
+                        }
+                        // row moves / absolute position -> line boundary
+                        'H' | 'f' | 'B' | 'E' | 'F' | 'd' => {
+                            if !matches!(last, None | Some('\n')) {
+                                out.push('\n');
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 // OSC: until BEL or ST (ESC \)
