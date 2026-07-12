@@ -1,3 +1,4 @@
+mod host;
 mod server;
 mod session;
 mod setup;

@@ -59,6 +59,7 @@ pub struct Ctx {
     pub pty_writer: PtyWriter,
     pub output: OutputBuf,
     pub killer: ChildKiller,
+    pub host: crate::host::HostApp,
 }
 
 pub fn serve(listener: TcpListener, ctx: Ctx) {
@@ -125,6 +126,10 @@ fn handle(mut request: tiny_http::Request, ctx: &Ctx) {
         (Method::Post, "/event") => handle_event(&body, &ctx.shared),
         (Method::Get, "/overlay/state") => handle_state(&url, &ctx.shared),
         (Method::Get, "/overlay/output") => handle_output(&ctx.output),
+        (Method::Post, "/overlay/open") => match ctx.host.focus() {
+            Ok(()) => json_response(200, "{}".into()),
+            Err(e) => json_response(500, serde_json::json!({ "error": e }).to_string()),
+        },
         (Method::Post, "/overlay/decision") => handle_decision(&body, &ctx.shared),
         (Method::Post, "/overlay/reply") => handle_reply(&body, &ctx.shared, &ctx.pty_writer),
         _ => json_response(404, "{\"error\":\"not found\"}".into()),

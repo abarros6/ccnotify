@@ -117,19 +117,28 @@ Per-project alias without a flag — drop a `.ccnotify.json` in the project root
 The compact pill shows a colored identity dot, the session alias, and the
 ambient status: blue **working…**, amber **needs your input** (hard to miss
 peripherally), green **idle — turn finished**. A native OS notification also
-fires as a secondary nudge. Drag the pill by its `⋮` grip; its position is
-remembered per alias, and new sessions stagger from the top-right corner so
-overlays don't stack.
+fires as a secondary nudge. Drag the pill from anywhere on it to move it
+(when expanded, drag by the top bar); its position is remembered per
+alias, and new sessions stagger from the top-right corner so overlays
+don't stack.
+
+The **–** button on the pill shrinks it to a bare status dot (~36 px):
+session color as the ring, status color inside. Click the dot to get the
+pill back — or, if Claude is waiting on you, clicking jumps straight to
+the decision panel.
 
 **Click the pill to expand it in place:**
 
 - On a **permission request**: the per-tool detail (command / diff /
   preview) with **Allow** / **Deny** buttons and an optional deny reason.
 - When **idle**: Claude's last message and a reply box (**⌘↩** to send).
-- Header controls: **▤** toggles a live, escape-stripped view of the
-  session's recent terminal output (refreshes every 2s, follows the tail
-  unless you scroll up) · **▾** collapses · **✕** quits the Claude session
-  (click twice — it arms red first so a stray click can't kill a session).
+- Header controls: **↗** brings the app hosting this session to the front
+  (VS Code gets the project window focused; Terminal/iTerm/WezTerm/Ghostty
+  are activated — macOS only) · **▤** toggles a live, escape-stripped view
+  of the session's recent terminal output (refreshes every 2s, follows the
+  tail unless you scroll up) · **▾** collapses · **✕** quits the Claude
+  session (click twice — it arms red first so a stray click can't kill a
+  session).
 
 If nobody answers a permission request within ~9.5 minutes, the hook
 returns no decision and Claude Code falls back to its normal terminal

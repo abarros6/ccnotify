@@ -98,6 +98,7 @@ All endpoints require the session token, via `X-CCNotify-Token` header or
 | `GET /overlay/output` | Escape-stripped tail of recent terminal output |
 | `POST /overlay/decision` | `{id, decision: "allow"\|"deny", reason?}` |
 | `POST /overlay/reply` | `{text}` → written into the pty's stdin |
+| `POST /overlay/open` | Focus the app hosting this session's terminal (from `__CFBundleIdentifier`/`TERM_PROGRAM` captured at startup; macOS only) |
 | `POST /overlay/quit` | Ends the Claude session (kills the pty child) |
 
 ## Security model

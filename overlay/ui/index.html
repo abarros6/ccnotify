@@ -53,6 +53,24 @@
   body.needs-input  #dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--needs) 45%, transparent); background: var(--needs); }
   body.idle         #status-line { color: var(--idle); }
 
+  #shrink {
+    background: none; border: none; color: var(--fg-dim); cursor: pointer;
+    font-size: 15px; padding: 2px 5px; border-radius: 6px; flex: none;
+  }
+  #shrink:hover { color: var(--fg); background: rgba(255,255,255,.08); }
+
+  /* ---------- mini dot mode ---------- */
+  #mini { display: none; }
+  body.mini #pill, body.mini #panel { display: none; }
+  body.mini #root { border-radius: 50%; border-width: 2px; }
+  body.mini #mini {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; cursor: pointer;
+  }
+  #mini-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--working); transition: background .3s; }
+  body.needs-input #mini-dot { background: var(--needs); box-shadow: 0 0 8px 2px color-mix(in srgb, var(--needs) 60%, transparent); }
+  body.idle #mini-dot { background: var(--idle); }
+
   /* ---------- expanded panel ---------- */
   #panel { display: none; flex-direction: column; height: 100%; }
   body.expanded #pill { display: none; }
@@ -64,7 +82,10 @@
   .headbtn { background: none; border: none; color: var(--fg-dim); font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
   .headbtn:hover { color: var(--fg); background: rgba(255,255,255,.06); }
   .headbtn.active { color: var(--fg); background: rgba(255,255,255,.1); }
+  .headbtn.err { color: #fff; background: var(--red); }
   #quit.armed { color: #fff; background: var(--red); }
+  #panel-head { cursor: grab; }
+  #panel-head:active { cursor: grabbing; }
 
   #content { flex: 1; overflow-y: auto; padding: 12px; -webkit-user-select: text; user-select: text; }
   #content h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--fg-dim); margin-bottom: 8px; }
@@ -110,20 +131,26 @@
 </head>
 <body class="working">
   <div id="root">
-    <div id="pill" title="Click to expand">
-      <div id="grip" data-tauri-drag-region>⋮</div>
+    <div id="pill" title="Click to expand — drag anywhere to move">
+      <div id="grip">⋮</div>
       <div id="dot"></div>
       <div id="pill-text">
         <div id="alias">…</div>
         <div id="status-line">connecting…</div>
       </div>
       <div id="status-icon">●</div>
+      <button id="shrink" title="Shrink to a dot">–</button>
+    </div>
+
+    <div id="mini" title="…">
+      <div id="mini-dot"></div>
     </div>
 
     <div id="panel">
-      <div id="panel-head" data-tauri-drag-region>
+      <div id="panel-head" title="Drag to move">
         <div class="dot"></div>
         <div id="panel-title">…</div>
+        <button id="open-host" class="headbtn" title="Open the app running this session">↗</button>
         <button id="output-toggle" class="headbtn" title="Show terminal output">▤</button>
         <button id="collapse" class="headbtn" title="Collapse">▾</button>
         <button id="quit" class="headbtn" title="Quit this Claude session">✕</button>
@@ -138,7 +165,7 @@ const invoke = window.__TAURI__.core.invoke;
 const appWindow = window.__TAURI__.window.getCurrentWindow();
 const LogicalSize = window.__TAURI__.dpi.LogicalSize;
 
-const COMPACT = [250, 64], EXPANDED = [390, 520];
+const COMPACT = [250, 64], EXPANDED = [390, 520], MINI = [36, 36];
 // Poll failures are near-instant (connection refused) once the wrapper
 // dies, so require sustained failure before self-closing.
 const DEAD_WRAPPER_FAILS = 6;
@@ -149,6 +176,8 @@ let expanded = false;
 let view = "main";           // "main" | "output"
 let outputTimer = null;
 let quitArmed = false, quitArmTimer = null;
+let panelKey = "";           // skip identical panel rebuilds
+let replyDraft = "", denyDraft = "";  // survive rebuilds while typing
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
@@ -175,9 +204,12 @@ async function pollLoop() {
   for (;;) {
     try {
       const next = await invoke("poll_state", { version });
+      failures = 0;
+      // The long-poll also returns on its 25s timeout with the same
+      // version — don't re-render (it would wipe in-progress typing).
+      if (next.version === version) continue;
       version = next.version;
       state = next;
-      failures = 0;
       render();
     } catch (e) {
       failures++;
@@ -201,27 +233,80 @@ function render() {
   $("status-line").textContent = state.pending
     ? `permission: ${state.pending.tool_name}`
     : meta.label;
+  $("mini").title = `${cfg?.alias ?? ""} — ${
+    state.pending ? `permission: ${state.pending.tool_name}` : meta.label
+  }`;
 
   // A new permission request takes priority over the output view.
   if (expanded && state.pending && view === "output") setView("main");
   if (expanded) renderPanel();
 }
 
-/* ---------- expand / collapse ---------- */
+/* ---------- moving the window ----------
+   Native drag regions start dragging on mousedown, which swallows
+   clicks — so we arm on mousedown and only start the OS drag once the
+   pointer actually moves. A press-and-release without movement is a
+   click. Interactive elements are excluded. */
 
-$("pill").addEventListener("click", (e) => {
-  if (e.target.id === "grip") return;
-  expand();
+function makeDraggable(el, onClick) {
+  el.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest("button, input, textarea, a")) return;
+    const sx = e.screenX, sy = e.screenY;
+    let done = false;
+    const cleanup = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    const move = (m) => {
+      if (done) return;
+      if (Math.hypot(m.screenX - sx, m.screenY - sy) > 4) {
+        done = true;
+        cleanup();
+        appWindow.startDragging();
+      }
+    };
+    const up = () => {
+      cleanup();
+      if (!done && onClick) onClick();
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  });
+}
+
+makeDraggable($("pill"), expand);      // whole pill: drag to move, click to expand
+makeDraggable($("panel-head"), null);  // expanded: top bar only
+makeDraggable($("mini"), () => {
+  // From the dot, jump straight to the decision if one is waiting.
+  if (state?.status === "needs_input") expand();
+  else restorePill();
 });
+
+/* ---------- expand / collapse / shrink ---------- */
+
 $("collapse").addEventListener("click", collapse);
+$("shrink").addEventListener("click", shrinkToDot);
+
+async function shrinkToDot() {
+  expanded = false;
+  document.body.classList.add("mini");
+  await appWindow.setSize(new LogicalSize(...MINI));
+}
+
+async function restorePill() {
+  document.body.classList.remove("mini");
+  await appWindow.setSize(new LogicalSize(...COMPACT));
+}
 $("output-toggle").addEventListener("click", () =>
   setView(view === "output" ? "main" : "output"));
 
 async function expand() {
   expanded = true;
+  document.body.classList.remove("mini");
   await appWindow.setSize(new LogicalSize(...EXPANDED));
   document.body.classList.add("expanded");
-  renderPanel();
+  renderPanel(true);
   await appWindow.setFocus();
 }
 
@@ -237,8 +322,24 @@ function setView(v) {
   $("output-toggle").classList.toggle("active", v === "output");
   stopOutputPolling();
   if (v === "output") startOutputPolling();
-  renderPanel();
+  renderPanel(true);
 }
+
+/* ---------- open host app ---------- */
+
+$("open-host").addEventListener("click", async () => {
+  try {
+    await invoke("open_host");
+  } catch (e) {
+    const btn = $("open-host");
+    btn.classList.add("err");
+    btn.title = String(e);
+    setTimeout(() => {
+      btn.classList.remove("err");
+      btn.title = "Open the app running this session";
+    }, 2000);
+  }
+});
 
 /* ---------- quit ---------- */
 
@@ -262,11 +363,19 @@ $("quit").addEventListener("click", async () => {
 
 /* ---------- expanded content ---------- */
 
-function renderPanel() {
+function renderPanel(force = false) {
   if (view === "output") {
     renderOutputView();
     return;
   }
+  // Rebuilding wipes any half-typed input, so only rebuild when what
+  // we'd show actually changed.
+  const key = JSON.stringify([
+    state?.pending?.id, state?.can_reply, state?.status, state?.message,
+  ]);
+  if (!force && key === panelKey) return;
+  panelKey = key;
+
   const content = $("content"), actions = $("actions");
   if (state?.pending) {
     content.innerHTML = formatTool(state.pending.tool_name, state.pending.tool_input);
@@ -276,6 +385,9 @@ function renderPanel() {
         <button class="action deny">Deny</button>
         <button class="action allow">Allow</button>
       </div>`;
+    const reason = actions.querySelector("#deny-reason");
+    reason.value = denyDraft;
+    reason.addEventListener("input", () => { denyDraft = reason.value; });
     actions.querySelector(".allow").onclick = () => sendDecision("allow");
     actions.querySelector(".deny").onclick = () => sendDecision("deny");
   } else if (state?.can_reply) {
@@ -287,10 +399,13 @@ function renderPanel() {
       <button class="action send">Send</button>
       <div class="hint">⌘↩ / Ctrl↩ to send</div>`;
     const box = actions.querySelector("#reply-text");
+    box.value = replyDraft;
+    box.addEventListener("input", () => { replyDraft = box.value; });
     const send = async () => {
       const text = box.value.trim();
       if (!text) return;
       await invoke("send_reply", { text });
+      replyDraft = "";
       collapse();
     };
     actions.querySelector(".send").onclick = send;
@@ -343,6 +458,7 @@ async function sendDecision(decision) {
     decision,
     reason: decision === "deny" ? reason : null,
   });
+  denyDraft = "";
   collapse();
 }
 

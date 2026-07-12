@@ -84,6 +84,7 @@ pub fn run(alias_override: Option<String>, claude_args: Vec<String>) -> Result<i
             pty_writer: pty_writer.clone(),
             output: output.clone(),
             killer,
+            host: crate::host::HostApp::detect(),
         };
         std::thread::spawn(move || server::serve(listener, ctx));
     }

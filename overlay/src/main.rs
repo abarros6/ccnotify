@@ -77,6 +77,14 @@ async fn get_output(identity: tauri::State<'_, SessionIdentity>) -> Result<Strin
     Ok(v.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string())
 }
 
+/// Bring the app hosting this session's terminal (VS Code, Terminal,
+/// iTerm, ...) to the foreground.
+#[tauri::command]
+async fn open_host(identity: tauri::State<'_, SessionIdentity>) -> Result<(), String> {
+    http::request(identity.port, &identity.token, "POST", "/overlay/open", Some("{}"))?;
+    Ok(())
+}
+
 /// Ask the wrapper to end the Claude session; the wrapper then closes
 /// this overlay as part of its own shutdown.
 #[tauri::command]
@@ -108,6 +116,7 @@ fn main() {
             decide,
             send_reply,
             get_output,
+            open_host,
             quit_session,
             exit_overlay
         ])
