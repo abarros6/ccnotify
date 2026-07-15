@@ -78,7 +78,7 @@ stored.
 
 | Hook event | Wrapper behavior |
 | --- | --- |
-| `PreToolUse` | Registers a pending permission, flips state to **needs input**, fires an OS notification, and **blocks the HTTP response** until the overlay posts a decision. The decision is returned as `hookSpecificOutput.permissionDecision` (`allow`/`deny` + reason). After 570 s with no answer it returns an empty body, letting Claude Code fall back to its own terminal prompt. |
+| `PreToolUse` | First checked against the session's own `permissions.allow`/`.deny`/`defaultMode` (merged from `.claude/settings.local.json`, `.claude/settings.json`, and `~/.claude/settings.json` — see `wrapper/src/permissions.rs`). A match decides instantly with no overlay involvement at all, mirroring what the raw terminal would do. Otherwise: registers a pending permission, flips state to **needs input**, fires an OS notification, and **blocks the HTTP response** until the overlay posts a decision. The decision is returned as `hookSpecificOutput.permissionDecision` (`allow`/`deny` + reason). After 570 s with no answer it returns an empty body, letting Claude Code fall back to its own terminal prompt. |
 | `Notification` | State → **needs input** with the notification message (unless a richer pending permission is already showing). Responds 200 immediately. |
 | `Stop` | State → **idle**, capturing `last_assistant_message` from the payload (transcript-file parsing is the fallback for older Claude Code versions). Responds 200 immediately. |
 | `UserPromptSubmit` | State → **working**. Responds 200 immediately. |

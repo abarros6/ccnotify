@@ -1,4 +1,5 @@
 mod host;
+mod permissions;
 mod server;
 mod session;
 mod setup;

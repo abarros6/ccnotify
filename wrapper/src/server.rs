@@ -11,6 +11,8 @@ use std::time::Duration;
 use ccnotify_common::{Decision, OverlayState, PendingPermission, Reply, Status};
 use tiny_http::{Header, Method, Response, Server};
 
+use crate::permissions::PermissionRules;
+
 /// How long a blocked PreToolUse request waits for an overlay decision
 /// before giving up and letting Claude Code fall back to its own
 /// terminal prompt. Must stay under the hook `timeout` in settings.json.
@@ -60,6 +62,7 @@ pub struct Ctx {
     pub output: OutputBuf,
     pub killer: ChildKiller,
     pub host: crate::host::HostApp,
+    pub rules: Arc<PermissionRules>,
 }
 
 pub fn serve(listener: TcpListener, ctx: Ctx) {
@@ -123,7 +126,7 @@ fn handle(mut request: tiny_http::Request, ctx: &Ctx) {
     }
 
     let response = match (request.method().clone(), path.as_str()) {
-        (Method::Post, "/event") => handle_event(&body, &ctx.shared),
+        (Method::Post, "/event") => handle_event(&body, &ctx.shared, &ctx.rules),
         (Method::Get, "/overlay/state") => handle_state(&url, &ctx.shared),
         (Method::Get, "/overlay/output") => handle_output(&ctx.output),
         (Method::Post, "/overlay/open") => match ctx.host.focus() {
@@ -154,7 +157,11 @@ fn query_param(url: &str, key: &str) -> Option<String> {
 }
 
 /// Dispatch a hook event by its hook_event_name.
-fn handle_event(body: &str, shared: &Shared) -> Response<std::io::Cursor<Vec<u8>>> {
+fn handle_event(
+    body: &str,
+    shared: &Shared,
+    rules: &PermissionRules,
+) -> Response<std::io::Cursor<Vec<u8>>> {
     let event: serde_json::Value = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(_) => return json_response(400, "{\"error\":\"bad json\"}".into()),
@@ -165,7 +172,7 @@ fn handle_event(body: &str, shared: &Shared) -> Response<std::io::Cursor<Vec<u8>
         .unwrap_or("");
 
     match name {
-        "PreToolUse" => handle_pre_tool_use(&event, shared),
+        "PreToolUse" => handle_pre_tool_use(&event, shared, rules),
         "Notification" => {
             let message = event
                 .get("message")
@@ -228,6 +235,7 @@ fn handle_event(body: &str, shared: &Shared) -> Response<std::io::Cursor<Vec<u8>
 fn handle_pre_tool_use(
     event: &serde_json::Value,
     shared: &Shared,
+    rules: &PermissionRules,
 ) -> Response<std::io::Cursor<Vec<u8>>> {
     let tool_name = event
         .get("tool_name")
@@ -235,6 +243,25 @@ fn handle_pre_tool_use(
         .unwrap_or("unknown")
         .to_string();
     let tool_input = event.get("tool_input").cloned().unwrap_or(serde_json::json!({}));
+
+    // Claude Code's own permissions.allow/deny already cover this call —
+    // decide instantly and skip the overlay entirely, same as the raw
+    // terminal would (no pending state, no notification, no block).
+    if let Some(allow) = rules.decide(&tool_name, &tool_input) {
+        let reason = if allow {
+            "Auto-allowed by ccnotify (matches your Claude Code permissions.allow rules)"
+        } else {
+            "Auto-denied by ccnotify (matches your Claude Code permissions.deny rules)"
+        };
+        let out = serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": if allow { "allow" } else { "deny" },
+                "permissionDecisionReason": reason,
+            }
+        });
+        return json_response(200, out.to_string());
+    }
 
     let (tx, rx) = mpsc::channel::<Decision>();
     let id;

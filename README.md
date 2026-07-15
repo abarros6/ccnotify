@@ -136,18 +136,24 @@ the decision panel.
   (VS Code gets the project window focused; Terminal/iTerm/WezTerm/Ghostty
   are activated — macOS only) · **▤** toggles a live, escape-stripped view
   of the session's recent terminal output (refreshes every 2s, follows the
-  tail unless you scroll up) · **▾** collapses · **✕** quits the Claude
-  session (click twice — it arms red first so a stray click can't kill a
-  session).
+  tail unless you scroll up) · **▾** collapses · **⏏** closes just the
+  overlay window — the Claude session keeps running untouched, it just
+  falls back to normal terminal permission prompts · **✕** quits the
+  Claude session (click twice — it arms red first so a stray click can't
+  kill a session).
 
 If nobody answers a permission request within ~9.5 minutes, the hook
 returns no decision and Claude Code falls back to its normal terminal
 prompt — nothing is silently denied.
 
-Note: the `PreToolUse` hook fires for **every** tool call, including ones
-Claude Code would normally auto-allow, so the overlay currently asks more
-often than the raw terminal would. A per-tool auto-allow config is on the
-roadmap.
+Note: the `PreToolUse` hook fires for **every** tool call. Before showing
+anything, the wrapper checks the call against your own Claude Code
+`permissions.allow` / `.deny` / `defaultMode` (from
+`.claude/settings.local.json`, `.claude/settings.json`, and
+`~/.claude/settings.json`) and decides instantly if a rule matches — so
+commands you've already told Claude Code to auto-allow (including ones
+saved from a previous "always allow" click) don't pop the overlay at all.
+Only calls with no matching rule fall through to an overlay prompt.
 
 ## How it works (short version)
 
@@ -196,7 +202,7 @@ from the overlay.
 - [x] Idle/Stop handling with replies into the pty
 - [x] Live terminal-output view and session quit from the overlay
 - [x] `ccnotify setup` / `uninstall`
-- [ ] Per-tool auto-allow config (e.g. always allow `Read`, always ask `Bash`)
+- [x] Per-tool auto-allow config (mirrors Claude Code's own `permissions.allow`/`.deny`/`defaultMode`)
 - [ ] Linux validation; Windows support
 - [ ] Signed/notarized macOS builds
 - [ ] Stretch: customizable companion appearance

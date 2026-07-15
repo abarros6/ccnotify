@@ -153,6 +153,7 @@
         <button id="open-host" class="headbtn" title="Open the app running this session">↗</button>
         <button id="output-toggle" class="headbtn" title="Show terminal output">▤</button>
         <button id="collapse" class="headbtn" title="Collapse">▾</button>
+        <button id="close-overlay" class="headbtn" title="Close overlay only — the Claude session keeps running">⏏</button>
         <button id="quit" class="headbtn" title="Quit this Claude session">✕</button>
       </div>
       <div id="content"></div>
@@ -340,6 +341,10 @@ $("open-host").addEventListener("click", async () => {
     }, 2000);
   }
 });
+
+/* ---------- close overlay only (session keeps running) ---------- */
+
+$("close-overlay").addEventListener("click", () => invoke("exit_overlay"));
 
 /* ---------- quit ---------- */
 

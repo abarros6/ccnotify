@@ -4,13 +4,14 @@
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child as ProcChild, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 use ccnotify_common::{color_for_alias, OverlayState, Status};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
+use crate::permissions::PermissionRules;
 use crate::server::{self, Shared};
 use crate::term;
 
@@ -38,11 +39,16 @@ pub fn run(alias_override: Option<String>, claude_args: Vec<String>) -> Result<i
         })
         .map_err(|e| format!("openpty: {e}"))?;
 
+    let cwd = std::env::current_dir().ok();
+    let rules = Arc::new(PermissionRules::load(
+        cwd.as_deref().unwrap_or_else(|| Path::new(".")),
+    ));
+
     let mut cmd = CommandBuilder::new("claude");
     for a in &claude_args {
         cmd.arg(a);
     }
-    if let Ok(cwd) = std::env::current_dir() {
+    if let Some(cwd) = &cwd {
         cmd.cwd(cwd);
     }
     cmd.env("CCNOTIFY_PORT", port.to_string());
@@ -85,6 +91,7 @@ pub fn run(alias_override: Option<String>, claude_args: Vec<String>) -> Result<i
             output: output.clone(),
             killer,
             host: crate::host::HostApp::detect(),
+            rules,
         };
         std::thread::spawn(move || server::serve(listener, ctx));
     }
